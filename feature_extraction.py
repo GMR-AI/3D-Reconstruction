@@ -1,7 +1,7 @@
 import cv2
 from ransacImplement import ransac_matrix
 import os
-
+import numpy as np
 
 def load_images_from_folder(folder):
     images = []
@@ -51,8 +51,7 @@ def feature_matching(des1, des2):
     return matches
 
 
-def tracks_2d():
-    pass
+
 
 
 if __name__ == '__main__':

@@ -29,3 +29,30 @@ def calibrate_camera(chessboard_size, images):
     np.savetxt('distortion_coefficients.txt', dist, fmt='%f')
 
     return ret, mtx, dist, rvecs, tvecs
+
+
+def estimate_pose(pts1, pts2, K):
+    # Normalize points
+    pts1_normalized = cv2.undistortPoints(np.expand_dims(pts1, axis=1), cameraMatrix=K, distCoeffs=None)
+    pts2_normalized = cv2.undistortPoints(np.expand_dims(pts2, axis=1), cameraMatrix=K, distCoeffs=None)
+
+    # Find essential matrix
+    E, mask = cv2.findEssentialMat(pts1_normalized, pts2_normalized, focal=1.0, pp=(0., 0.), method=cv2.RANSAC, prob=0.999, threshold=1.0)
+    points, R, t, mask = cv2.recoverPose(E, pts1_normalized, pts2_normalized)
+
+    return R, t
+
+def essential_to_projection(essential_matrix, proj_mat):
+    u, s, v = np.linalg.svd(essential_matrix)
+
+    if np.linalg.det(np.dot(u, v)) < 0:
+        v = -v
+
+    w = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
+    p2s = [np.vstack((np.dot(u, np.dot(w, v)).T, u[:, 2])).T,
+           np.vstack((np.dot(u, np.dot(w, v)).T, -u[:, 2])).T,
+           np.vstack((np.dot(u, np.dot(w.T, v)).T, u[:, 2])).T,
+           np.vstack((np.dot(u, np.dot(w.T, V)).T, -u[:, 2])).T]
+
+    return p2s
+    pass
