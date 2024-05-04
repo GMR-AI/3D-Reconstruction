@@ -51,9 +51,6 @@ def feature_matching(des1, des2):
     return matches
 
 
-
-
-
 if __name__ == '__main__':
     folder = 'dataset'
     images = load_images_from_folder(folder)

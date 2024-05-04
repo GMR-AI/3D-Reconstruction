@@ -1,39 +1,42 @@
 import numpy as np
+import cv2
+from scipy.optimize import least_squares
 
-def toUnhomogenize(pts):
-    return pts[:, :-1] / pts[:, -1:]
+def error_and_jacobian(x, points1, points2, proj_mat1, proj_mat2):
+    X = np.hstack([x, 1])
+    x1_proj = np.dot(proj_mat1, X)
+    x2_proj = np.dot(proj_mat2, X)
+    x1_proj /= x1_proj[2]
+    x2_proj /= x2_proj[2]
+    error = np.hstack([points1 - x1_proj[:2], points2 - x2_proj[:2]])
+    jacobian = np.zeros((4, 3))
+    jacobian[:2, :] = proj_mat1[2, :3] - (proj_mat1[:2, :3].T * x1_proj[2]).T
+    jacobian[2:, :] = proj_mat2[2, :3] - (proj_mat2[:2, :3].T * x2_proj[2]).T
+    return error, jacobian
 
-def triangulate(pts1, pts2, projectionMatrix1, projectionMatrix2):
-    N = min(len(pts1), len(pts2))
-    X = np.zeros((N, 4))
 
-    for i in range(N):
-        A = np.vstack((
-            pts1[i, 1] * projectionMatrix1[2, :] - projectionMatrix1[1, :],
-            projectionMatrix1[0, :] - pts1[i, 0] * projectionMatrix1[2, :],
-            pts2[i, 1] * projectionMatrix2[2, :] - projectionMatrix2[1, :],
-            projectionMatrix2[0, :] - pts2[i, 0] * projectionMatrix2[2, :]
-        ))
+def nonlinear_triangulation(points1, points2, proj_mat1, proj_mat2, X_init):
+    num_points = points1.shape[1]
+    res = np.ones((4, num_points))
+    for i in range(num_points):
+        X_init_homog = X_init[:, i] / X_init[3, i]
+        result = least_squares(error_and_jacobian, X_init_homog[:3], jac=True, args=(points1[:, i], points2[:, i], proj_mat1, proj_mat2))
+        res[:, i] = np.hstack([result.x, 1])
+    return res
 
-        _, _, VT = np.linalg.svd(A)
-        X[i, :] = VT[-1, :]
 
-    X = X.T
-    X /= X[-1, :]
+def linear_triangulation(points1, points2, proj_mat1, proj_mat2):
+    num_points = points1.shape[1]
+    res = np.ones((4, num_points))
+    for i in range(num_points):
+        A = np.asarray([
+            (points1[0, i] * proj_mat1[2, :] - proj_mat1[0, :]),
+            (points1[1, i] * proj_mat1[2, :] - proj_mat1[1, :]),
+            (points2[0, i] * proj_mat2[2, :] - proj_mat2[0, :]),
+            (points2[1, i] * proj_mat2[2, :] - proj_mat2[1, :])
+        ])
+        _, _, V = np.linalg.svd(A)
+        X = V[-1, :4]
+        res[:, i] = X / X[3]
 
-    pts1_reprojected = projectionMatrix1 @ X
-    pts2_reprojected = projectionMatrix2 @ X
-
-    pts1_reprojected /= pts1_reprojected[-1, :]
-    pts2_reprojected /= pts2_reprojected[-1, :]
-
-    pts1_homo = np.vstack((pts1.T, np.ones((1, len(pts1)))))
-    pts2_homo = np.vstack((pts2.T, np.ones((1, len(pts2)))))
-
-    err1 = np.sum((pts1_reprojected - pts1_homo)**2)
-    err2 = np.sum((pts2_reprojected - pts2_homo)**2)
-
-    err = err1 + err2
-    X = toUnhomogenize(X.T)
-    return X, err
-
+    return res
