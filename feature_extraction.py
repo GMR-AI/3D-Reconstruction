@@ -32,8 +32,8 @@ def multi_feature_matching(des, window_size):
             j = j % len(des)
             if i == j:
                 continue
-        matchtmp = feature_matching(des[i], des[j])
-        matches[i].append(matchtmp)
+            matchtmp = feature_matching(des[i], des[j])
+            matches[i].append(matchtmp)
     return matches
 
 
