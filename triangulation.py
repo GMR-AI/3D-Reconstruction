@@ -16,7 +16,7 @@ def error_and_jacobian(x, points1, points2, proj_mat1, proj_mat2):
 
 
 def nonlinear_triangulation(points1, points2, proj_mat1, proj_mat2, X_init):
-    num_points = points1.shape[1]
+    num_points = points1.shape[0]
     res = np.ones((4, num_points))
     for i in range(num_points):
         X_init_homog = X_init[:, i] / X_init[3, i]
@@ -26,15 +26,15 @@ def nonlinear_triangulation(points1, points2, proj_mat1, proj_mat2, X_init):
 
 
 def linear_triangulation(points1, points2, proj_mat1, proj_mat2):
-    num_points = points1.shape[1]
+    num_points = np.shape(points1)[0]
     res = np.ones((4, num_points))
     for i in range(num_points):
-        A = np.asarray([
-            (points1[0, i] * proj_mat1[2, :] - proj_mat1[0, :]),
-            (points1[1, i] * proj_mat1[2, :] - proj_mat1[1, :]),
-            (points2[0, i] * proj_mat2[2, :] - proj_mat2[0, :]),
-            (points2[1, i] * proj_mat2[2, :] - proj_mat2[1, :])
-        ])
+        A = np.squeeze(np.asarray([
+            [points1[i][0] * proj_mat1[2][:] - proj_mat1[0][:]],
+            [points1[i][1] * proj_mat1[2][:] - proj_mat1[1][:]],
+            [points2[i][0] * proj_mat2[2][:] - proj_mat2[0][:]],
+            [points2[i][1] * proj_mat2[2][:] - proj_mat2[1][:]]
+        ]))
         _, _, V = np.linalg.svd(A)
         X = V[-1, :4]
         res[:, i] = X / X[3]

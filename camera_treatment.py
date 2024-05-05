@@ -45,8 +45,8 @@ def ExtractCameraPose(E, K):
         if np.linalg.det(R[i]) < 0:
             R[i] = -R[i]
             t[i] = -t[i]
-
-    proj_mats = [K*np.hstack((R[i], t[i].T)) for i in range(4)]
+    
+    proj_mats = [K @ np.hstack((R[i], np.transpose([t[i]]))) for i in range(4)]
 
     return proj_mats
 
@@ -60,3 +60,7 @@ def ambiguity_solver(proj_mat1, proj_mats2, point1, point2):
             return proj_mat2
 
     return None
+
+
+def disambiguate_pose(proj_mats, pts3D):
+    pass

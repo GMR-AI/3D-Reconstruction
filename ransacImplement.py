@@ -14,6 +14,18 @@ def ransac_matrix(matches, keypoints):
     return fundamental_matrices
 
 
+def simple_ransac_matrix(matches, keypoints):
+    fundamental_matrices = []
+    for i in range(len(matches)):  # avoid accessing out-of-range index
+        idx2 = (i + 1) % len(matches)
+        pts1 = np.float32([keypoints[i][m.queryIdx].pt for m in matches[i]]).reshape(-1,1,2)
+        pts2 = np.float32([keypoints[idx2][m.trainIdx].pt for m in matches[i]]).reshape(-1,1,2)
+        F, mask = cv2.findFundamentalMat(pts1, pts2, cv2.FM_RANSAC)
+        fundamental_matrices.append(F)
+    return fundamental_matrices
+
+
+
 def get_essential_matrix(K, fundamental_matrices):
     essential_matrix = []
     for i in range(len(fundamental_matrices)):
@@ -25,4 +37,12 @@ def get_essential_matrix(K, fundamental_matrices):
             essential_matrix[i].append(np.dot(u, np.dot(np.diag(s), v)))
 
     return essential_matrix
-     
+
+def simple_get_essential_matrix(K, fundamental_matrices):
+    essential_matrices = []
+    for F in fundamental_matrices:
+        E = K.T @ F @ K
+        U,S,V = np.linalg.svd(E)
+        S = [1,1,0]
+        essential_matrices.append(U@np.diag(S)@V)
+    return essential_matrices

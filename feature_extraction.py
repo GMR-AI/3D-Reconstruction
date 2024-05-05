@@ -25,16 +25,19 @@ def multi_feature_extraction(images):
 
 
 def multi_feature_matching(des, window_size):
-    matches = []
+    simple_matches = []
+    multi_matches = []
     for i in range(len(des)):
-        matches.append([])
+        multi_matches.append([])
         for j in range(i-int(window_size/2), i+int(window_size/2)):
             j = j % len(des)
             if i == j:
                 continue
             matchtmp = feature_matching(des[i], des[j])
-            matches[i].append(matchtmp)
-    return matches
+            if j == (i + 1) % len(des):
+                simple_matches.append(matchtmp)
+            multi_matches[i].append(matchtmp)
+    return simple_matches, multi_matches
 
 
 def feature_extraction(image):
