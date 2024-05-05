@@ -48,7 +48,7 @@ def ExtractCameraPose(E, K):
     
     proj_mats = [K @ np.hstack((R[i], np.transpose([t[i]]))) for i in range(4)]
 
-    return proj_mats
+    return proj_mats, R, t
 
 
 def ambiguity_solver(proj_mat1, proj_mats2, point1, point2):
@@ -62,5 +62,33 @@ def ambiguity_solver(proj_mat1, proj_mats2, point1, point2):
     return None
 
 
-def disambiguate_pose(proj_mats, pts3D):
-    pass
+def disambiguate_camera_pose(Rs, ts, points1, points2, K):
+    max_count = 0
+    for i in range(4):
+        R = Rs[i]
+        t = ts[i]
+        P1 = np.dot(K, np.hstack((np.eye(3), np.zeros((3, 1)))))
+        P2 = np.dot(K, np.hstack((R, t.reshape(-1, 1))))
+        initial_points = triangulation.linear_triangulation(points1, points2, P1, P2)
+        points3D = triangulation.nonlinear_triangulation(points1, points2, P1, P2, initial_points)
+        count = np.sum((np.dot(P1[2], points3D.T) > 0) & (np.dot(P2[2], points3D.T) > 0))
+        if count > max_count:
+            max_count = count
+            best_R = R
+            best_t = t
+    return best_R, best_t
+
+def disambiguate(pts1, pts2, P1, P2s):
+    P1 = np.array(P1)
+    P2s = np.array(P2s)
+    best_error = np.finfo('float').max
+    for i in range(P2s.shape[0]):
+        P2_tmp = P2s[i]
+        X, err = triangulation.linear_triangulation2(pts1, pts2, P1, P2_tmp)
+        print(X.shape)
+        print(err < best_error)
+        print(np.all(X[-1, :] >= 0))
+        if err < best_error and np.all(X[-1, :] >= 0):
+            best_error = err
+            P2 = P2_tmp
+    return P2
