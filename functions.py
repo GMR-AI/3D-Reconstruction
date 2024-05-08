@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import plotly.graph_objects as go
-from read_write_model import *
+from output_classes import *
 
 import cv2
 import os
@@ -18,7 +18,7 @@ def load_images_from_folder(folder):
         img = cv2.imread(os.path.join(folder, filename))
         if img is not None:
             images.append(img)
-            imagenes[id] = Image(id=id, name=filename, qvec=np.zeros((4,)), tvec=np.zeros((3,)), camera_id=1, xys=np.ndarray(0), point3D_ids=np.ndarray(0))
+            img_db[id] = c_Image(iid=id, ifilename=filename, iqvec=np.zeros((4,)), itvec=np.zeros((3,)), icamera_id=1, ixys=np.ndarray(0), ipoint3D_ids=np.ndarray(0))
             id+=1
     return np.array(images), img_db
 
@@ -29,10 +29,11 @@ def feature_extraction_set(images, im_db):
     id = 1
     for im in images:
         kp_tmp, des_tmp = sift.detectAndCompute(im, None) # This assumes the extraction method to be from the CV2 library
-        im_db[id].xys=np.array([k.pt for k in kp_tmp])
-        im_db[id].point3D_ids = np.ndarray((kp_tmp.size,)).fill(-1)
+        im_db[id].xys = np.array([k.pt for k in kp_tmp])
+        im_db[id].point3D_idxs = np.full((len(kp_tmp),), -1)
         kp.append(kp_tmp)
         des.append(des_tmp)
+        id += 1
     return kp, des # Can't turn them into a np array since their shape can be inhomogeneous
 
 def feature_matching_set(kp, des):
