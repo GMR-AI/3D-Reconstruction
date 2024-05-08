@@ -3,62 +3,83 @@ from ransacImplement import ransac_matrix
 import os
 import numpy as np
 
-def load_images_from_folder(folder):
-    images = []
-    for filename in os.listdir(folder):
-        if filename.endswith(".jpg") or filename.endswith(".png"):  # add file types as needed
-            img = cv2.imread(os.path.join(folder, filename))
-            if img is not None:
-                img_rgb = img
-                images.append(img_rgb)
-    return images
+def feature_extraction_set(images):
+    sift = cv2.SIFT_create()
 
+    kp, des = [], []
+    for im in images:
+        kp_tmp, des_tmp = sift.detectAndCompute(im, None) # This assumes the extraction method to be from the CV2 library
+        kp.append(kp_tmp)
+        des.append(des_tmp)
+    return kp, des # Can't turn them into a np array since their shape can be inhomogeneous
 
-def multi_feature_extraction(images):
-    kp = []
-    des = []
-    for image in images:
-        kptmp, destmp = feature_extraction(image)
-        kp.append(kptmp)
-        des.append(destmp)
-    return kp, des
+def find_matches_and_remove_outliers(keypoints, descriptors, lowes_ratio=0.7):
+    # Initialize FLANN matching
+    FLANN_INDEX_KDTREE = 0
+    index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+    search_params = dict(checks=50)
+    matcher = cv2.FlannBasedMatcher(index_params, search_params)    
 
+    matches = []
+    n_imgs = len(keypoints)
+    for i in range(n_imgs):
+        matches.append([])
+        for j in range(n_imgs):
+            if j <= i: 
+                matches[i].append(None)
+            else:
+                match = []
+                m = matcher.knnMatch(descriptors[i], descriptors[j], k=2)
+                for k in range(len(m)):
+                    try:
+                        if m[k][0].distance < lowes_ratio*m[k][1].distance:
+                            match.append(m[k][0])
+                    except:
+                        continue
+                matches[i].append(match)
 
-def multi_feature_matching(des, window_size):
-    simple_matches = []
-    multi_matches = []
-    for i in range(len(des)):
-        multi_matches.append([])
-        for j in range(i-int(window_size/2), i+int(window_size/2)):
-            j = j % len(des)
-            if i == j:
+    # Remove outliers
+    for i in range(len(matches)):
+        for j in range(len(matches[i])):
+            if j <= i: continue
+            if len(matches[i][j]) < 20:
+                matches[i][j] = []
                 continue
-            matchtmp = feature_matching(des[i], des[j])
-            if j == (i + 1) % len(des):
-                simple_matches.append(matchtmp)
-            multi_matches[i].append(matchtmp)
-    return simple_matches, multi_matches
+            kpts_i = []
+            kpts_j = []
+            for k in range(len(matches[i][j])):
+                kpts_i.append(keypoints[i][matches[i][j][k].queryIdx].pt)
+                kpts_j.append(keypoints[j][matches[i][j][k].trainIdx].pt)
+            kpts_i = np.int32(kpts_i)
+            kpts_j = np.int32(kpts_j)
+            F, mask = cv2.findFundamentalMat(kpts_i, kpts_j, cv2.FM_RANSAC, ransacReprojThreshold=3)
+            if np.linalg.det(F) > 1e-7: raise ValueError(f"Bad F_mat between images: {i}, {j}. Determinant: {np.linalg.det(F)}")
+            matches[i][j] = np.array(matches[i][j])
+            if mask is None:
+                matches[i][j] = []
+                continue
+            matches[i][j] = matches[i][j][mask.ravel() == 1]
+            matches[i][j] = list(matches[i][j])
 
+            if len(matches[i][j]) < 20:
+                matches[i][j] = []
+                continue
 
-def feature_extraction(image):
-    grayimage = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    orb = cv2.ORB_create(nfeatures=1000)
-    keypoints_orb, descriptors_orb = orb.detectAndCompute(grayimage, None)
-    return keypoints_orb, descriptors_orb
-
-
-def feature_matching(des1, des2):
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-    matches = bf.match(des1, des2)
-    matches = sorted(matches, key=lambda x: x.distance)
     return matches
 
+def adjacency_matrix(num_imgs, matches):
+    num_img_pairs = 0
+    num_pairs = 0
+    pairs = []
+    img_adjacency = np.zeros((num_imgs, num_imgs))
+    for i in range(len(matches)):
+        for j in range(len(matches[i])):
+            if j <= i: continue
+            num_pairs += 1
+            if len(matches[i][j]) > 0:
+                num_img_pairs += 1
+                pairs.append((i,j))
+                img_adjacency[i][j] = 1
 
-if __name__ == '__main__':
-    folder = 'dataset'
-    images = load_images_from_folder(folder)
-    kp, des = multi_feature_extraction(images)
-    matches = multi_feature_matching(des, window_size=20)
-
-    fundamental_matrices = ransac_matrix(matches, kp)
-    print(fundamental_matrices)
+    list_of_img_pairs = pairs
+    return img_adjacency, list_of_img_pairs
