@@ -1,37 +1,19 @@
 from functions import *
-from read_write_model import *
-
-
-
-
-
-
+from output_classes import *
 
 if __name__ == '__main__':
     cameras = {}
     punts3D = {}
-    imagenes = {}
 
     ## COLMAP
 
-    images, imagenes = load_images_from_folder('dinos')
+    images, img_db = load_images_from_folder('dinos')
 
     # Feature extraction
-    kp, des = feature_extraction_set(images)
+    kp, des = feature_extraction_set(images, img_db)
 
     # Feature matching
     matches = feature_matching_set(kp, des)
-
-    # Inicializar los puntos 3D
-
-    punts3D[t] = Point3D(
-        id=t,
-        xyz=p,
-        rgb=images[0][index1[0], index1[1]],
-        error=0,
-        image_ids=[],
-        point2D_idxs=1,
-    )
 
     # Inicializar camara
     height, width = images.shape[1:3]
@@ -39,6 +21,7 @@ if __name__ == '__main__':
         [2360, 0, width / 2],
         [0, 2360, height / 2],
         [0, 0, 1]])
+
     cameras[1] = Camera(
                     id=1,
                     model="OPENCV",
@@ -61,8 +44,8 @@ if __name__ == '__main__':
 
     # Define RT for camera 1 (center at world origin and matching orientation)
     RT1 = np.hstack((np.eye(3), np.zeros((3, 1))))
-    imagenes[1].qvec = rotmat2qvec(np.eye(3))
-    imagenes[1].tvec = np.zeros((3,))
+    img_db[1].qvec = rotmat2qvec(np.eye(3))
+    img_db[1].tvec = np.zeros((3,))
 
     K1, K2 = K, K
     RT2 = RT2s[0]
@@ -73,31 +56,20 @@ if __name__ == '__main__':
     pts_cloud = pts_cloud[:, pts_cloud[2, :] > 0]
 
     for p in pts_cloud.T:
-        t=len(punts3D)+1
-        index1=kp[0][matches[(0,1)][t].queryIdx].pt
-        index2=kp[1][matches[(0,1)][t].trainIdx].pt
+        point_idx = len(punts3D)
+        index1 = kp[0][matches[(0,1)][point_idx].queryIdx].pt
+        im_pts_idx = np.array([(m.trainIdx, j) for j in range(1, images.shape[0]) for m in matches[(0,j)] if m.queryIdx == matches[(0,1)][point_idx].queryIdx])
+        punts3D[point_idx] = Point3D(
+            id=point_idx,
+            xyz=p,
+            rgb=images[0, index1[1], index1[0], :],
+            error=0,
+            image_ids=im_pts_idx[:][1],
+            point2D_idxs=im_pts_idx[:][0],
+        )
 
-    imagenes[2].qvec = rotmat2qvec(RT2[:3,:3])
-    imagenes[2].tvec = RT2[:,-1]
-
-
-    # Visualize 3D points
-    import plotly.graph_objects as go
-
-    # Assuming points_3D is your array of 3D points
-    x = pts_cloud[0]
-    y = pts_cloud[1]
-    z = pts_cloud[2]
-
-    fig = go.Figure(data=[go.Scatter3d(x=x, y=y, z=z,
-                                       mode='markers',
-                                       marker=dict(size=2, color=z, colorscale='Viridis'))])
-
-    fig.update_layout(scene=dict(xaxis_title='X',
-                                 yaxis_title='Y',
-                                 zaxis_title='Z'))
-
-    fig.show()
+    img_db[2].qvec = rotmat2qvec(RT2[:3,:3])
+    img_db[2].tvec = RT2[:,-1]
 
     # Initialize general Projection matrix list, RTs list and 3d points list
     P_list = np.ndarray((images.shape[0], 3, 4))
@@ -109,4 +81,4 @@ if __name__ == '__main__':
         plot_model(pts)
 
     # Escribir datos
-    write_model(cameras, imagenes, punts3D, )
+    write_model(cameras, img_db, punts3D, )
