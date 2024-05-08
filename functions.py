@@ -217,7 +217,7 @@ def double_disambiguation(K1, RT1, K2, RT2s, pts1, pts2, pts3d):
     return best_RT, best_pts3d
 
 def calculate_projection_matrix(K, pts3d, pts2d):
-    _, rod, T, _ = cv2.solvePnPRansac(pts3d.T, pts2d.T, K, None)#, flags=cv2.SOLVEPNP_P3P)
+    _, rod, T, _ = cv2.solvePnPRansac(pts3d, pts2d, K, None)#, flags=cv2.SOLVEPNP_P3P)
     R = cv2.Rodrigues(rod)[0]
     if np.linalg.det(R) < 0:
         R = R * -1
