@@ -1,76 +1,68 @@
 import numpy as np
-import cv2
-from scipy.optimize import least_squares
+import scipy.optimize as optimize
 
+from camera_treatment import reprojection
 
-def project(points, P):
-    points = np.dot(P, points.T).T
-    points[:, :2] /= points[:, 2, np.newaxis]
-    return points[:, :2]
+def linear_triangulation(K1, RT1, K2, RT2, pts1, pts2):
+    # First, set all points to homogeneous
+    pts1_homo = np.vstack((pts1, np.ones(pts1.shape[1])))
+    pts2_homo = np.vstack((pts2, np.ones(pts2.shape[1])))
 
-def reprojection_error(params, points1, points2, P1, P2):
-    points3D = params.reshape(-1, 3)
-    points3D_homogeneous = np.hstack([points3D, np.ones((points3D.shape[0], 1))])
-    projected_points1 = project(points3D_homogeneous, P1)
-    projected_points2 = project(points3D_homogeneous, P2)
-    return np.hstack([(points1 - projected_points1).ravel(), (points2 - projected_points2).ravel()])
+    # Calculate every projection matrix
+    P1 = K1 @ RT1
+    P2 = K2 @ RT2
 
-def nonlinear_triangulation(points1, points2, P1, P2, initial_points):
-    initial_params = initial_points.ravel()
-    res = least_squares(reprojection_error, initial_params, method='lm', args=(points1, points2, P1, P2))
-    return res.x.reshape(-1, 3)
+    # Solve using svd
+    pts3d = np.zeros((3, pts1.shape[1]))
+    for i in range(pts1.shape[1]):
+        A = np.array([pts1_homo[1,i]*P1[2,:] - P1[1,:],
+            P1[0,:] - pts1_homo[0,i]*P1[2,:],
+            pts2_homo[1,i]*P2[2,:] - P2[1,:],
+            P2[0,:] - pts2_homo[0,i]*P2[2,:]])
+        ATA = A.T @ A
+        _, _, Vt = np.linalg.svd(ATA)
+        if Vt[-1, -1] != 0:
+            pts3d[:, i] = Vt[-1, :3]/Vt[-1, -1]
+    
+    return pts3d
 
+def linear_triangulation2(P1, P2, pts1, pts2):
+    # First, set all points to homogeneous
+    pts1_homo = np.vstack((pts1, np.ones(pts1.shape[1])))
+    pts2_homo = np.vstack((pts2, np.ones(pts2.shape[1])))
 
-def error_and_jacobian(x, points1, points2, proj_mat1, proj_mat2):
-    X = np.hstack([x, 1])
-    x1_proj = np.dot(proj_mat1, X)
-    x2_proj = np.dot(proj_mat2, X)
-    x1_proj /= x1_proj[2]
-    x2_proj /= x2_proj[2]
-    error = np.hstack([points1 - x1_proj[:2], points2 - x2_proj[:2]])
-    jacobian = np.zeros((4, 3))
-    jacobian[:2, :] = proj_mat1[2, :3] - (proj_mat1[:2, :3].T * x1_proj[2]).T
-    jacobian[2:, :] = proj_mat2[2, :3] - (proj_mat2[:2, :3].T * x2_proj[2]).T
-    return error, jacobian
+    # Solve using svd
+    pts3d = np.zeros((3, pts1.shape[1]))
+    for i in range(pts1.shape[1]):
+        A = np.array([pts1_homo[1,i]*P1[2,:] - P1[1,:],
+                      P1[0,:] - pts1_homo[0,i]*P1[2,:],
+                      pts2_homo[1,i]*P2[2,:] - P2[1,:],
+                      P2[0,:] - pts2_homo[0,i]*P2[2,:]])
+        ATA = A.T @ A
+        _, _, Vt = np.linalg.svd(ATA)
+        if Vt[-1, -1] != 0:
+            pts3d[:, i] = Vt[-1, :3]/Vt[-1, -1]
+    
+    return pts3d
 
+def reprojection_err(pts3d, pts2d1, pts2d2, P1, P2):
+    pts2d1_proj, pts2d2_proj = reprojection(P1, P2, pts3d)
+    
+    err1_list = np.square(pts2d1 - pts2d1_proj)
+    
+    err1 = np.sum(np.square(pts2d1 - pts2d1_proj), axis=0)
+    err2 = np.sum(np.square(pts2d2 - pts2d2_proj), axis=0)
+    error = err1 + err2
+    return error
 
-def linear_triangulation(points1, points2, proj_mat1, proj_mat2):
-    num_points = np.shape(points1)[0]
-    res = np.ones((4, num_points))
-    for i in range(num_points):
-        A = np.squeeze(np.asarray([
-            [points1[i][0] * proj_mat1[2][:] - proj_mat1[0][:]],
-            [points1[i][1] * proj_mat1[2][:] - proj_mat1[1][:]],
-            [points2[i][0] * proj_mat2[2][:] - proj_mat2[0][:]],
-            [points2[i][1] * proj_mat2[2][:] - proj_mat2[1][:]]
-        ]))
-        _, _, V = np.linalg.svd(A)
-        X = V[-1, :4]
-        res[:, i] = X / X[3]
+def nonlinear_triangulation(K, RT1, RT2, pts3d, pts2d1, pts2d2): # Non linear triangulation reference https://www.uio.no/studier/emner/matnat/its/nedlagte-emner/UNIK4690/v16/forelesninger/lecture_7_2-triangulation.pdf
+    P1 = K @ RT1
+    P2 = K @ RT2
 
-    return res
-
-def linear_triangulation2(pts1, pts2, P1, P2):
-    # Calculate 3D point
-    pts4D = np.zeros((4, pts1.shape[1]))
-    pts4D = cv2.triangulatePoints(P1, P2, pts1, pts2, pts4D)
-    pts4D /= pts4D[3, :]
-
-    # Calculate reprojection error
-    # First, get reprojections
-    pts1_reproj = P1 @ pts4D
-    pts2_reproj = P2 @ pts4D
-
-    pts1_reproj /= pts1_reproj[-1, :]
-    pts2_reproj /= pts2_reproj[-1, :]
-
-    # Second, homogenize every point to compare with the reprojection
-    # pts1 (2xN)
-    pts1_homo = np.concatenate((pts1, np.ones((1, pts1.shape[1]))), axis=0)
-    pts2_homo = np.concatenate((pts2, np.ones((1, pts2.shape[1]))), axis=0)
-
-    err1 = np.sum(np.square(pts1_reproj - pts1_homo))
-    err2 = np.sum(np.square(pts2_reproj - pts2_homo))
-
-    err = err1 + err2
-    return pts4D[:3, :], err
+    final_pts3d = []
+    for i in range(pts3d.shape[1]):
+        opt_params = optimize.least_squares(fun=reprojection_err, x0=pts3d[:, i], method='trf', args=[pts2d1[:, i], pts2d2[:, i], P1, P2])
+        pt3d = opt_params.x
+        final_pts3d.append(pt3d)
+    
+    return np.array(final_pts3d)

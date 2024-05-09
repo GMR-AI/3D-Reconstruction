@@ -1,94 +1,123 @@
 import numpy as np
-import cv2
-import triangulation
-import glob
 
-def calibrate_camera(chessboard_size, images):
-    objp = np.zeros((chessboard_size[0]*chessboard_size[1],3), np.float32)
-    objp[:, :2] = np.mgrid[0:chessboard_size[0], 0:chessboard_size[1]].T.reshape(-1, 2)
+def normalize(pts):
+    x_mean = np.mean(pts[:, 0])
+    y_mean = np.mean(pts[:, 1])
+    sigma = np.mean(np.sqrt((pts[:, 0] - x_mean) ** 2 + (pts[:, 1] - y_mean) ** 2))
+    M = np.sqrt(2) / sigma
+    T = np.array([
+        [M, 0, -M * x_mean],
+        [0, M, -M * y_mean],
+        [0, 0, 1]
+    ])
+    return T
 
-    # Arrays to store object points and image points from all the images.
-    objpoints = []  # 3d points in real world space
-    imgpoints = []  # 2d points in image plane.
+def eight_point_algorithm(pts1, pts2):
 
-    for img in images:
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    pts1_homo = np.vstack((pts1, np.ones(pts1.shape[1]))).T
+    pts2_homo = np.vstack((pts2, np.ones(pts2.shape[1]))).T
 
-        # Find the chess board corners
-        ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
-
-        # If found, add object points, image points
-        if ret == True:
-            objpoints.append(objp)
-            imgpoints.append(corners)
-
-    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
-
-    # Save intrinsic matrix (mtx) and distortion coefficients (dist) to text files
-    np.savetxt('intrinsic_matrix.txt', mtx, fmt='%f')
-    np.savetxt('distortion_coefficients.txt', dist, fmt='%f')
-
-    return ret, mtx, dist, rvecs, tvecs
+    # Normalization
+    T = normalize(pts1_homo)
+    T_prime = normalize(pts2_homo)
 
 
-def ExtractCameraPose(E, K):
-    # Descomponer la matriz esencial en R y t
-    U, S, Vt = np.linalg.svd(E)
-    W = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
+    pts1_homo = (T @ pts1_homo.T).T
+    pts2_homo = (T_prime @ pts2_homo.T).T
 
-    # Cuatro posibles combinaciones de R y t
-    R = [np.dot(U, np.dot(W, Vt)), np.dot(U, np.dot(W, Vt)), np.dot(U, np.dot(W.T, Vt)), np.dot(U, np.dot(W.T, Vt))]
-    t = [U[:, 2], U[:, 2], -U[:, 2], -U[:, 2]]
-
-    # Asegurarse de que la determinante de R es positiva
-    for i in range(4):
-        if np.linalg.det(R[i]) < 0:
-            R[i] = -R[i]
-            t[i] = -t[i]
+    # x2.T*F*x1=0
+    # A*f=0, f is F flattened into a 1D array
     
-    proj_mats = [K @ np.hstack((R[i], np.transpose([t[i]]))) for i in range(4)]
 
-    return proj_mats, R, t
+    # Create A
+    A = np.zeros((pts1.shape[1], 9))
+    for i in range(pts1.shape[1]):
+        A[i] = np.array([
+            pts1_homo[i,0]*pts2_homo[i,0], pts1_homo[i,1]*pts2_homo[i,0], pts1_homo[i,2]*pts2_homo[i,0],
+            pts1_homo[i,0]*pts2_homo[i,1], pts1_homo[i,1]*pts2_homo[i,1], pts1_homo[i,2]*pts2_homo[i,1],
+            pts1_homo[i,0]*pts2_homo[i,2], pts1_homo[i,1]*pts2_homo[i,2], pts1_homo[i,2]*pts2_homo[i,2]
+            ])
+    
+    # Solve Af=0 using svd
+    U,S,Vt = np.linalg.svd(A)
+    F = Vt[-1,:].reshape((3,3))
+
+    # Enforce rank2 constraint
+    U,S,Vt = np.linalg.svd(F)
+    S[-1] = 0
+    F = U @ np.diag(S) @ Vt
+
+    F = T_prime.T @ F @ T
+    return F
 
 
-def ambiguity_solver(proj_mat1, proj_mats2, point1, point2):
-    for i, proj_mat2 in enumerate(proj_mats2):
-        a1 = triangulation.linear_triangulation(point1, point2, proj_mat1, proj_mat2)
-        pm2_homo = np.linalg.inv(np.vstack([proj_mat2, [0, 0, 0, 1]]))
-        a2 = np.dot(pm2_homo[:3, :4], a1)
-        if a1[2] > 0 and a2[2] > 0:
-            return proj_mat2
-
-    return None
+def essential_from_fundamental(K1, F, K2):
+    return K1.T @ F @ K2
 
 
-def disambiguate_camera_pose(Rs, ts, points1, points2, K):
-    max_count = 0
-    for i in range(4):
-        R = Rs[i]
-        t = ts[i]
-        P1 = np.dot(K, np.hstack((np.eye(3), np.zeros((3, 1)))))
-        P2 = np.dot(K, np.hstack((R, t.reshape(-1, 1))))
-        initial_points = triangulation.linear_triangulation(points1, points2, P1, P2)
-        points3D = triangulation.nonlinear_triangulation(points1, points2, P1, P2, initial_points)
-        count = np.sum((np.dot(P1[2], points3D.T) > 0) & (np.dot(P2[2], points3D.T) > 0))
-        if count > max_count:
-            max_count = count
-            best_R = R
-            best_t = t
-    return best_R, best_t
+def pose_from_essential(E):
+    U,_,Vt = np.linalg.svd(E)
+    W = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
+    
+    Rs = [U @ W @ Vt, U @ W.T @ Vt]
+    for i in range(len(Rs)):
+        if np.linalg.det(Rs[i]) < 0:
+            Rs[i] = Rs[i] * -1
 
-def disambiguate(pts1, pts2, P1, P2s):
-    P1 = np.array(P1)
-    P2s = np.array(P2s)
-    best_error = np.finfo('float').max
-    for i in range(P2s.shape[0]):
-        P2_tmp = P2s[i]
-        X, err = triangulation.linear_triangulation2(pts1, pts2, P1, P2_tmp)
-        print(X.shape)
-        print(err < best_error)
-        print(np.all(X[-1, :] >= 0))
-        if err < best_error and np.all(X[-1, :] >= 0):
-            best_error = err
-            P2 = P2_tmp
-    return P2
+    # Array with all possible camera poses (extrinsics)
+    RTs = np.array([
+        np.hstack((Rs[0], U[:, 2, np.newaxis])),
+        np.hstack((Rs[0], -U[:, 2, np.newaxis])),
+        np.hstack((Rs[1], U[:, 2, np.newaxis])),
+        np.hstack((Rs[1], -U[:, 2, np.newaxis])),
+    ])
+
+    return RTs
+
+def reprojection(P1, P2, pts3d):
+    try:
+        num_pts3d = pts3d.shape[1]
+    except:
+        num_pts3d = 1
+    
+    local_pts3d = pts3d
+    if num_pts3d == 1:
+        local_pts3d = pts3d[:,np.newaxis]
+    
+    pts3d_homo = np.vstack((local_pts3d, np.ones(num_pts3d)))
+    pts2d1_homo = P1 @ pts3d_homo
+    pts2d2_homo = P2 @ pts3d_homo
+    return np.squeeze(pts2d1_homo[:2]/pts2d1_homo[-1]), np.squeeze(pts2d2_homo[:2]/pts2d2_homo[-1])
+
+def double_disambiguation(K1, RT1, K2, RT2s, pts1, pts2, pts3d):
+    max_positive_z = 0
+    min_error = np.finfo('float').max
+    best_RT = None
+    best_pts3d = None
+    P1 = K1 @ RT1
+
+    for i in range(RT2s.shape[0]):
+        P2 = K2 @ RT2s[i]
+        num_positive_z = np.sum(pts3d[i][2, :] > 0)
+        re1_pts2, re2_pts2 = reprojection(P1, P2, pts3d[i])
+
+        err1 = np.sum(np.square(re1_pts2 - pts1))
+        err2 = np.sum(np.square(re2_pts2 - pts2))
+
+        err = err1 + err2
+
+        if num_positive_z >= max_positive_z and err < min_error:
+            max_positive_z = num_positive_z
+            min_error = err
+            best_RT = RT2s[i]
+            best_pts3d = pts3d[i]
+    
+    return best_RT, best_pts3d
+
+def calculate_projection_matrix(K, pts3d, pts2d):
+    _, rod, T, _ = cv2.solvePnPRansac(pts3d, pts2d, K, None)#, flags=cv2.SOLVEPNP_P3P)
+    R = cv2.Rodrigues(rod)[0]
+    if np.linalg.det(R) < 0:
+        R = R * -1
+    P = K @ np.hstack((R, T))
+    return P

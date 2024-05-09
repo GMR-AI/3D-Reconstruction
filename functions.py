@@ -18,7 +18,7 @@ def load_images_from_folder(folder):
         img = cv2.imread(os.path.join(folder, filename))
         if img is not None:
             images.append(img)
-            img_db[id] = c_Image(iid=id, ifilename=filename, iqvec=np.zeros((4,)), itvec=np.zeros((3,)), icamera_id=1, ixys=np.ndarray(0), ipoint3D_ids=np.ndarray(0))
+            img_db[id] = c_Image(iid=id, ifilename=filename, iqvec=-1, itvec=-1, icamera_id=1, ixys=np.ndarray(0), ipoint3D_ids=np.ndarray(0))
             id+=1
     return np.array(images), img_db
 
@@ -43,9 +43,10 @@ def feature_matching_set(kp, des):
     search_params = dict(checks=50)
     flann = cv2.FlannBasedMatcher(index_params, search_params)
 
-    matches = {} # Dict for easier access to each match
+    matches = []
     for i in range(len(kp)):
-        for j in range(i+1, len(kp)): # Only match each image with the rest, we don't need the full matrix
+        matches.append([])
+        for j in range(len(kp)): # Only match each image with the rest, we don't need the full matrix
             matches_tmp = flann.knnMatch(des[i], des[j], k=2)
 
             # Lowe's ratio test
@@ -58,9 +59,9 @@ def feature_matching_set(kp, des):
                 _, mask = cv2.findHomography(pts1, pts2, cv2.RANSAC, 5.0)
 
                 inliers = [good_matches[k] for k in range(len(good_matches)) if mask[k]==1]
-                matches[(i,j)] = inliers
+                matches[i].append(inliers)
             else:
-                matches[(i,j)] = []
+                matches[i].append([])
     
     return matches
 
@@ -158,7 +159,8 @@ def linear_triangulation(K1, RT1, K2, RT2, pts1, pts2):
             P2[0,:] - pts2_homo[0,i]*P2[2,:]])
         ATA = A.T @ A
         _, _, Vt = np.linalg.svd(ATA)
-        pts3d[:, i] = Vt[-1, :3]/Vt[-1, -1]
+        if Vt[-1, -1] != 0:
+            pts3d[:, i] = Vt[-1, :3]/Vt[-1, -1]
     
     return pts3d
 
@@ -176,17 +178,27 @@ def linear_triangulation2(P1, P2, pts1, pts2):
                       P2[0,:] - pts2_homo[0,i]*P2[2,:]])
         ATA = A.T @ A
         _, _, Vt = np.linalg.svd(ATA)
-        pts3d[:, i] = Vt[-1, :3]/Vt[-1, -1]
+        if Vt[-1, -1] != 0:
+            pts3d[:, i] = Vt[-1, :3]/Vt[-1, -1]
     
     return pts3d
 
 
 
 def reprojection(P1, P2, pts3d):
-    pts3d_homo = np.vstack((pts3d, np.ones(pts3d.shape[1])))
-    pts2d1_homo = np.dot(P1, pts3d_homo)
-    pts2d2_homo = np.dot(P2, pts3d_homo)
-    return pts2d1_homo/pts2d1_homo[-1], pts2d2_homo/pts2d2_homo[-1]
+    try:
+        num_pts3d = pts3d.shape[1]
+    except:
+        num_pts3d = 1
+    
+    local_pts3d = pts3d
+    if num_pts3d == 1:
+        local_pts3d = pts3d[:,np.newaxis]
+    
+    pts3d_homo = np.vstack((local_pts3d, np.ones(num_pts3d)))
+    pts2d1_homo = P1 @ pts3d_homo
+    pts2d2_homo = P2 @ pts3d_homo
+    return np.squeeze(pts2d1_homo[:2]/pts2d1_homo[-1]), np.squeeze(pts2d2_homo[:2]/pts2d2_homo[-1])
 
 def double_disambiguation(K1, RT1, K2, RT2s, pts1, pts2, pts3d):
     max_positive_z = 0
@@ -195,16 +207,13 @@ def double_disambiguation(K1, RT1, K2, RT2s, pts1, pts2, pts3d):
     best_pts3d = None
     P1 = K1 @ RT1
 
-    pts1_homo = np.vstack((pts1, np.ones(pts1.shape[1])))
-    pts2_homo = np.vstack((pts2, np.ones(pts2.shape[1])))
-
     for i in range(RT2s.shape[0]):
         P2 = K2 @ RT2s[i]
         num_positive_z = np.sum(pts3d[i][2, :] > 0)
         re1_pts2, re2_pts2 = reprojection(P1, P2, pts3d[i])
 
-        err1 = np.sum(np.square(re1_pts2 - pts1_homo))
-        err2 = np.sum(np.square(re2_pts2 - pts2_homo))
+        err1 = np.sum(np.square(re1_pts2 - pts1))
+        err2 = np.sum(np.square(re2_pts2 - pts2))
 
         err = err1 + err2
 
