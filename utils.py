@@ -66,5 +66,5 @@ def fill_pts3d(img_db: dict, punts3D_db: dict, pts_cloud: np.ndarray, kp_img: np
 
 
 def connect_images(matches):
-    adj_matrix = [[1 if i < j and len(matches[i][j]) >= 4 else 0 for j in range(len(matches[i]))] for i in range(len(matches))]
+    adj_matrix = [[1 if i < j and len(matches[i][j]) > 0 else 0 for j in range(len(matches[i]))] for i in range(len(matches))]
     return np.array(adj_matrix)
