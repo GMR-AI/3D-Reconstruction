@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 
+
 def ransac_matrix(matches, keypoints):
     fundamental_matrices = []
     for i in range(len(matches)):  # avoid accessing out-of-range index
@@ -25,7 +26,6 @@ def simple_ransac_matrix(matches, keypoints):
     return fundamental_matrices
 
 
-
 def get_essential_matrix(K, fundamental_matrices):
     essential_matrix = []
     for i in range(len(fundamental_matrices)):
@@ -37,6 +37,7 @@ def get_essential_matrix(K, fundamental_matrices):
             essential_matrix[i].append(np.dot(u, np.dot(np.diag(s), v)))
 
     return essential_matrix
+
 
 def simple_get_essential_matrix(K, fundamental_matrices):
     essential_matrices = []

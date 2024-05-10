@@ -1,4 +1,6 @@
 import numpy as np
+import cv2
+
 
 def normalize(pts):
     x_mean = np.mean(pts[:, 0])
@@ -11,6 +13,7 @@ def normalize(pts):
         [0, 0, 1]
     ])
     return T
+
 
 def eight_point_algorithm(pts1, pts2):
 
@@ -74,7 +77,8 @@ def pose_from_essential(E):
 
     return RTs
 
-def reprojection(P1, P2, pts3d):
+
+def reprojection(P, pts3d):
     try:
         num_pts3d = pts3d.shape[1]
     except:
@@ -82,42 +86,51 @@ def reprojection(P1, P2, pts3d):
     
     local_pts3d = pts3d
     if num_pts3d == 1:
-        local_pts3d = pts3d[:,np.newaxis]
-    
-    pts3d_homo = np.vstack((local_pts3d, np.ones(num_pts3d)))
-    pts2d1_homo = P1 @ pts3d_homo
-    pts2d2_homo = P2 @ pts3d_homo
-    return np.squeeze(pts2d1_homo[:2]/pts2d1_homo[-1]), np.squeeze(pts2d2_homo[:2]/pts2d2_homo[-1])
+        pts3d_homo = np.append(local_pts3d, 1)[:, np.newaxis].T
+    else:
+        pts3d_homo = np.vstack((local_pts3d, np.ones(num_pts3d)))
+    pts2d_homo = P @ pts3d_homo
+    return np.squeeze(pts2d_homo[:2]/pts2d_homo[-1])
+
+
+def reprojection_error(K, RT, pts3d, pts2d, rep_threshold = 5):
+    P1 = K @ RT
+    pts2d_repr = reprojection(P1, pts3d)
+
+    error_list = np.square(pts2d_repr - pts2d)
+    error = np.sum(error_list, axis=0)
+    avg_error = error/len(error_list)
+
+    inliers = error <= rep_threshold
+    perc_inliers = np.sum(inliers) / len(inliers)
+
+    return error, avg_error, perc_inliers
+
 
 def double_disambiguation(K1, RT1, K2, RT2s, pts1, pts2, pts3d):
     max_positive_z = 0
     min_error = np.finfo('float').max
     best_RT = None
     best_pts3d = None
-    P1 = K1 @ RT1
 
     for i in range(RT2s.shape[0]):
-        P2 = K2 @ RT2s[i]
         num_positive_z = np.sum(pts3d[i][2, :] > 0)
-        re1_pts2, re2_pts2 = reprojection(P1, P2, pts3d[i])
+        repr_err1, _ = reprojection_error(K1, RT1, pts3d, pts1)
+        repr_err2, _ = reprojection_error(K2, RT2s[i], pts3d, pts2)
+        repr_err = repr_err1 + repr_err2
 
-        err1 = np.sum(np.square(re1_pts2 - pts1))
-        err2 = np.sum(np.square(re2_pts2 - pts2))
-
-        err = err1 + err2
-
-        if num_positive_z >= max_positive_z and err < min_error:
+        if num_positive_z >= max_positive_z and repr_err < min_error:
             max_positive_z = num_positive_z
-            min_error = err
+            min_error = repr_err
             best_RT = RT2s[i]
             best_pts3d = pts3d[i]
     
     return best_RT, best_pts3d
+
 
 def calculate_projection_matrix(K, pts3d, pts2d):
     _, rod, T, _ = cv2.solvePnPRansac(pts3d, pts2d, K, None)#, flags=cv2.SOLVEPNP_P3P)
     R = cv2.Rodrigues(rod)[0]
     if np.linalg.det(R) < 0:
         R = R * -1
-    P = K @ np.hstack((R, T))
-    return P
+    return np.hstack((R, T))

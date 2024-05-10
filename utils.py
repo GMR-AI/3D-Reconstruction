@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 
 from output_classes import Point3D
 
+
 def plot_model(points3d_with_views):
     # Extract the 3D points from points3d_with_views
     pts_cloud = np.array([pt3.xyz for pt3 in points3d_with_views.values() if np.abs(np.sum(pt3.xyz)) < 200])
@@ -28,6 +29,7 @@ def plot_model(points3d_with_views):
     # tight layout
     fig.update_layout(margin=dict(l=0, r=0, b=0, t=0))
     fig.show()
+
 
 def fill_pts3d(img_db: dict, punts3D_db: dict, pts_cloud: np.ndarray, kp_img: np.ndarray, matches: list[list], images: np.ndarray, idx1: int, idx2: int):
     """
@@ -62,6 +64,7 @@ def fill_pts3d(img_db: dict, punts3D_db: dict, pts_cloud: np.ndarray, kp_img: np
             img_db[im_pts[0]].point3D_idxs[im_pts[1]] = point_id
         num_pt += 1
 
+
 def connect_images(matches):
-    adj_matrix = [[1 if len(matches[i][j]) >= 6 else 0 for j in range(len(matches[i]))] for i in range(len(matches))]
+    adj_matrix = [[1 if i < j and len(matches[i][j]) >= 4 else 0 for j in range(len(matches[i]))] for i in range(len(matches))]
     return np.array(adj_matrix)
