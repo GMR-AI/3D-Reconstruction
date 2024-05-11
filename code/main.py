@@ -8,16 +8,17 @@ import triangulation as tr
 import bundle_adjustment as ba
 import pnp
 
+from typing import Literal
 from visualization import plot_model
 
-def main():
+def main(path: str = 'dinos', method: Literal['cv2', 'custom'] = 'cv2'):
     # Initialize colmap output dictionaries
     cameras_db: dict[int, cf.Camera] = {}
     img_db: dict[int, oc.c_Image] = {}
     pts3D_db: dict[int, oc.c_Point3D] = {}
 
     # Load, extract and match all images
-    images = ft.load_images_from_folder('../dinos', img_db)
+    images = ft.load_images_from_folder(path, img_db)
     kp, des = ft.feature_extraction(images, img_db)
     matches = ft.feature_matching(kp, des)
     adj_matrix = ft.create_adj_matrix(matches)
@@ -39,7 +40,7 @@ def main():
     # Calculate initial camera poses
     starting_pair = ts.starting_img_set(adj_matrix, img_db, matches, K)
 
-    R1, t1, R2, t2, pts3d = ts.get_camera_pose(img_db, matches, K, starting_pair[0], starting_pair[1], method='cv2')
+    R1, t1, R2, t2, pts3d = ts.get_camera_pose(img_db, matches, K, starting_pair[0], starting_pair[1], method=method)
     img_db[starting_pair[0] + 1].qvec = cf.rotmat2qvec(R1)
     img_db[starting_pair[0] + 1].tvec = t1
     img_db[starting_pair[1] + 1].qvec = cf.rotmat2qvec(R2)
@@ -79,12 +80,12 @@ def main():
         if processed_idx < unprocessed_idx:
             kpts1, kpts2 = ft.matching_keypoints(img_db, matches, processed_idx + 1, unprocessed_idx + 1)
             if kpts1.shape[1] > 0:
-                pts3d, avg_tri_err_l, avg_tri_err_r = tr.triangulate_and_reproject(K, R1, t1, R2, t2, kpts1, kpts2, method='cv2')
+                pts3d, avg_tri_err_l, avg_tri_err_r = tr.triangulate_and_reproject(K, R1, t1, R2, t2, kpts1, kpts2, method=method)
                 oc.fill_pts3d(img_db, pts3D_db, pts3d, matches, images, processed_idx, unprocessed_idx)
         else:
             kpts2, kpts1 = ft.matching_keypoints(img_db, matches, unprocessed_idx + 1, processed_idx + 1)
             if kpts2.shape[1] > 0:
-                pts3d, avg_tri_err_l, avg_tri_err_r = tr.triangulate_and_reproject(K, R2, t2, R1, t1, kpts2, kpts1, method='cv2')
+                pts3d, avg_tri_err_l, avg_tri_err_r = tr.triangulate_and_reproject(K, R2, t2, R1, t1, kpts2, kpts1, method=method)
                 oc.fill_pts3d(img_db, pts3D_db, pts3d, matches, images, unprocessed_idx, processed_idx)
         
         
@@ -105,10 +106,10 @@ def main():
     for key, img_colmap in img_db.items():
         img_output[key] = img_colmap.to_tupla()
     
-    cf.write_cameras_binary(cameras_db)
-    cf.write_images_binary(img_output)
-    cf.write_points3D_binary(pts3D_output)
+    cf.write_cameras_binary(cameras_db, 'cameras_binary')
+    cf.write_images_binary(img_output, 'images_binary')
+    cf.write_points3D_binary(pts3D_output, 'points3D_binary')
 
 
 if __name__ == '__main__':
-    main()
+    main(path='dinos', method='cv2')

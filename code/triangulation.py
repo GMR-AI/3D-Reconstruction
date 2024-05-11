@@ -55,7 +55,7 @@ def triangulate_and_reproject(K: np.ndarray, R1: np.ndarray, t1: np.ndarray, R2:
     pts3d
     """
 
-    pts3d = triangulate(K, R1, t1, R2, t2, pts2d1, pts2d2)
+    pts3d = triangulate(K, R1, t1, R2, t2, pts2d1, pts2d2, method=method)
 
     if reproject:
         _, avg_error1, _ = reprojection_error(K, R1, t1, pts2d1, pts3d)

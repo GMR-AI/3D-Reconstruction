@@ -71,7 +71,7 @@ def get_camera_pose(img_db: dict[int, oc.c_Image], matches: list[list], K: np.nd
         pts3d = tr.triangulate(K, R1, t1, R2, t2, pts2d1, pts2d2, method='cv2')
     
     if method == 'custom':
-        F = fundamental_matrix(pts2d1.T, pts2d2.T)
+        F = fundamental_matrix(pts2d1, pts2d2)
         E = essential_from_fundamental(K, F)
         R2s, t2s = pose_from_essential(E)
         R2, t2, pts3d = double_disambiguation(K, R1, t1, R2s, t2s, pts2d1, pts2d2)
@@ -83,8 +83,8 @@ def fundamental_matrix(pts2d1: np.ndarray, pts2d2: np.ndarray):
     """
     Calculate the fundamental matrix of the camera 2 using the eight point algorithm.
 
-    pts2d1: array of points 2d of the first image matching the points 2d of the second image. Must be 2xN.
-    pts2d2: array of points 2d of the second image matching the points 2d of the first image. Must be 2xN.
+    pts2d1: 2xN 2D points of image 1 corresponding to the points of image 2.
+    pts2d2: 2xN 2D points of image 2 corresponding to the points of image 1.
     """
     pts1_homo = np.vstack((pts2d1, np.ones(pts2d1.shape[1]))).T
     pts2_homo = np.vstack((pts2d2, np.ones(pts2d2.shape[1]))).T
@@ -167,9 +167,8 @@ def double_disambiguation(K: np.ndarray, R1: np.ndarray, t1: np.ndarray, R2s: np
     # Triangulate points
     pts3d_possible = []
     for R2 in R2s:
-        pts3d_possible.append([])
         for t2 in t2s:
-            pts3d_possible[-1].append(tr.triangulate_and_reproject(K, R1, t1, R2, t2, pts2d1, pts2d2, method='custom'))
+            pts3d_possible.append(tr.triangulate_and_reproject(K, R1, t1, R2, t2, pts2d1, pts2d2, reproject=False, method='custom'))
     
     pts3d_possible = np.array(pts3d_possible)
 
