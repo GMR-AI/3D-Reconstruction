@@ -2,7 +2,9 @@ import numpy as np
 import cv2
 from scipy.optimize import least_squares
 from scipy.sparse import lil_matrix
-from read_write_model import rotmat2qvec, qvec2rotmat
+from colmap_functions import rotmat2qvec, qvec2rotmat
+
+import output_classes as oc
 
 
 def bundle_adjustment_sparsity(n_cameras, n_points, camera_indices, point_indices):
@@ -45,9 +47,9 @@ def fun(params, n_cameras, n_points, camera_indices, point_indices, points_2d, K
     return (points_proj - points_2d).ravel()
 
 
-def bundleAd(points3d_with_views, img_db, processed_imgs, K, ftol):
-    R_mats = {im.id-1: qvec2rotmat(im.qvec) for im in img_db if isinstance(im.qvec, np.ndarray) }
-    t_vecs = {im.id-1: im.tvec for im in img_db if isinstance(im.qvec, np.ndarray)}
+def bundleAd(pts3D_db: dict[int, oc.c_Point3D], img_db: dict[int, oc.c_Image], processed_imgs, K, ftol):
+    R_mats = {id-1: qvec2rotmat(im.qvec) for id, im in img_db.items() if isinstance(im.qvec, np.ndarray) }
+    t_vecs = {id-1: im.tvec for id, im in img_db.items() if isinstance(im.qvec, np.ndarray)}
 
     point_indices = []
     points_2d = []
@@ -62,9 +64,9 @@ def bundleAd(points3d_with_views, img_db, processed_imgs, K, ftol):
         camera_params.append(np.hstack((R_mats[r].ravel(), t_vecs[r].ravel())))
         cam_count += 1
 
-    for pt3d_idx in range(len(points3d_with_views)):
-        points_3d.append(points3d_with_views[pt3d_idx].xyz)
-        for cam_idx, kpt_idx in zip(points3d_with_views[pt3d_idx].image_ids, points3d_with_views[pt3d_idx].point2D_idxs):
+    for pt3d_idx in range(len(pts3D_db)):
+        points_3d.append(pts3D_db[pt3d_idx].xyz)
+        for cam_idx, kpt_idx in zip(pts3D_db[pt3d_idx].image_ids, pts3D_db[pt3d_idx].point2D_idxs):
             if cam_idx - 1 not in processed_imgs: continue
             point_indices.append(pt3d_idx)
             camera_indices.append(BA_cam_idxs[cam_idx - 1])  # append normalized cam idx
@@ -97,10 +99,10 @@ def bundleAd(points3d_with_views, img_db, processed_imgs, K, ftol):
     t_vecs = adjusted_t_vecs
 
     for id, R_mat in R_mats.items():
-        img_db[id + 1].qvec = rotmat2qvec(R_mat[id])
+        img_db[id + 1].qvec = rotmat2qvec(R_mat)
 
     for id, t_vec in t_vecs.items():
-        img_db[id + 1].tvec = t_vec[id]
+        img_db[id + 1].tvec = t_vec
 
-    for pt3d_idx in range(len(points3d_with_views)):
-        points3d_with_views[pt3d_idx].xyz = np.expand_dims(adjusted_points_3d[pt3d_idx], axis=0)
+    for pt3d_idx in range(len(pts3D_db)):
+        pts3D_db[pt3d_idx].xyz = adjusted_points_3d[pt3d_idx]
