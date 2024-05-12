@@ -108,7 +108,7 @@ def main(path: str = 'dinos', method: Literal['cv2', 'custom'] = 'cv2'):
     
     cf.write_cameras_binary(cameras_db, 'cameras_binary')
     cf.write_images_binary(img_output, 'images_binary')
-    cf.write_points3D_binary(pts3D_output, 'points3D_binary')
+    cf.write_points3D_binary(pts3D_output, 'points3D_binary') #wowi
 
 
 if __name__ == '__main__':
