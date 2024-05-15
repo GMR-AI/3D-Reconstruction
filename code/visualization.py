@@ -5,6 +5,7 @@ import numpy as np
 def plot_model(points3d_with_views):
     # Extract the 3D points from points3d_with_views
     pts_cloud = np.array([pt3.xyz for pt3 in points3d_with_views.values()])
+    colors = np.array([pt3.rgb for pt3 in points3d_with_views.values()]) / 255.0
     
     # Assuming points_3D is your array of 3D points
     x = pts_cloud[:, 0]
@@ -18,8 +19,7 @@ def plot_model(points3d_with_views):
         mode='markers',
         marker=dict(
             size=2,
-            color=z,                # set color to an array/list of desired values
-            colorscale='Viridis',   # choose a colorscale
+            color=colors,           # set color to an array/list of desired values
             opacity=0.8
         )
     )])
