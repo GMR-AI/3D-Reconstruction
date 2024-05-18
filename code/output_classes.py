@@ -39,7 +39,7 @@ class c_Image:
             id=self.id,
             name=self.filename,
             qvec=self.qvec,
-            tvec=self.tvec,
+            tvec=self.tvec.flatten(),
             camera_id=self.camera_id,
             xys=self.xys,
             point3D_ids=self.point3D_idxs)
