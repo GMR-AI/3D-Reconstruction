@@ -28,7 +28,7 @@ Here is a demonstration of the 3D reconstruction of the dinosaur:
 
 <p float="left">
   <img src="imagesReadMe/viff.007.jpg" width="500" />
-  <img src="imagesReadme/3D-Dino.png" width="500" /> 
+  <img src="imagesReadMe/3Dino.png" width="500" /> 
 </p>
 
 ## Contributing
